@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.venv/
+data/captures/
+data/*.db
+reports/*.md
