@@ -25,20 +25,38 @@ class LocalMultimodalClient:
         # Runtime settings used for model requests.
         self.settings = settings
 
-    def assess(self, observation: Observation, recent_summary: dict[str, Any]) -> StudyAssessment:
+    def assess(
+        self,
+        observation: Observation,
+        recent_summary: dict[str, Any],
+        recent_frames: list[dict[str, Any]] | None = None,
+    ) -> StudyAssessment:
         """Generate a study-state assessment from the observation and recent summary."""
         if not self.settings.model_enabled:
             return self._heuristic_assessment(observation)
 
+        recent_frames = recent_frames or []
         payload_variants = [
             self._build_payload(
-                observation, recent_summary, include_images=True, enforce_json_response=True
+                observation,
+                recent_summary,
+                recent_frames,
+                include_images=True,
+                enforce_json_response=True,
             ),
             self._build_payload(
-                observation, recent_summary, include_images=True, enforce_json_response=False
+                observation,
+                recent_summary,
+                recent_frames,
+                include_images=True,
+                enforce_json_response=False,
             ),
             self._build_payload(
-                observation, recent_summary, include_images=False, enforce_json_response=False
+                observation,
+                recent_summary,
+                recent_frames,
+                include_images=False,
+                enforce_json_response=False,
             ),
         ]
         for payload in payload_variants:
@@ -73,29 +91,39 @@ class LocalMultimodalClient:
         self,
         observation: Observation,
         recent_summary: dict[str, Any],
+        recent_frames: list[dict[str, Any]],
         *,
         include_images: bool,
         enforce_json_response: bool,
     ) -> dict[str, Any]:
         """Build an OpenAI-compatible multimodal request payload."""
-        # User message content containing text and optional images.
+        # User message content containing text, history JSON, and recent screen images.
         user_content: list[dict[str, Any]] = [
-            {"type": "text", "text": self._build_prompt(observation, recent_summary)}
+            {"type": "text", "text": self._build_prompt(observation, recent_frames)},
+            {
+                "type": "text",
+                "text": "最近10条历史记录(JSON):\n"
+                + json.dumps(recent_summary, ensure_ascii=False, indent=2),
+            },
         ]
-        if include_images and observation.screen_path:
-            user_content.append(
-                {
-                    "type": "image_url",
-                    "image_url": {"url": self._to_data_url(observation.screen_path)},
-                }
-            )
-        if include_images and observation.camera_path:
-            user_content.append(
-                {
-                    "type": "image_url",
-                    "image_url": {"url": self._to_data_url(observation.camera_path)},
-                }
-            )
+        if include_images:
+            for index, frame in enumerate(recent_frames, start=1):
+                screen_path = frame.get("screen_path")
+                observed_at = frame.get("observed_at")
+                if not isinstance(screen_path, Path):
+                    continue
+                user_content.append(
+                    {
+                        "type": "text",
+                        "text": f"截图{index} 抓取时间: {observed_at}",
+                    }
+                )
+                user_content.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": self._to_data_url(screen_path)},
+                    }
+                )
         payload = {
             "model": self.settings.model_name,
             "messages": [
@@ -114,17 +142,25 @@ class LocalMultimodalClient:
             payload["response_format"] = {"type": "json_object"}
         return payload
 
-    def _build_prompt(self, observation: Observation, recent_summary: dict[str, Any]) -> str:
+    def _build_prompt(
+        self,
+        observation: Observation,
+        recent_frames: list[dict[str, Any]],
+    ) -> str:
         """Build the structured prompt used for study-state inference."""
         # System context attached to the current observation.
         context = observation.context
         return "".join(
             [
-                "请根据屏幕截图、摄像头截图和上下文判断用户当前学习状态。\n",
+                "请根据屏幕截图和系统上下文判断用户当前学习状态。\n",
+                (
+                    "你还会收到最近3张按时间排序的截图及其抓取时间说明，"
+                    "以及最近10条按时间排序的历史记录 JSON，请重点利用时间连续性进行判断。\n"
+                ),
                 "输出 JSON 字段: ",
                 (
-                    "state, confidence, learning_related, is_present, "
-                    "is_looking_at_screen, focus_score, reason, distraction_signals。\n"
+                    "state, confidence, learning_related, focus_score, "
+                    "reason, distraction_signals。\n"
                 ),
                 (
                     f"当前上下文: active_app={context.active_app}, "
@@ -132,7 +168,7 @@ class LocalMultimodalClient:
                     f"idle_seconds={context.idle_seconds}, "
                     f"app_switch_count_5m={context.app_switch_count_5m}\n"
                 ),
-                f"最近摘要: {json.dumps(recent_summary, ensure_ascii=False)}\n",
+                f"最近截图数量: {len(recent_frames)}\n",
                 "state 只允许: studying, distracted, away, uncertain。",
             ]
         )
@@ -226,16 +262,14 @@ class LocalMultimodalClient:
             "game",
             "steam",
         ]
-        # Whether a camera image was captured successfully.
-        has_camera = observation.camera_path is not None
 
         if any(keyword in title for keyword in learning_keywords):
             return StudyAssessment(
                 state="studying",
                 confidence=0.68,
                 learning_related=True,
-                is_present=has_camera,
-                is_looking_at_screen=True if has_camera else None,
+                is_present=True,
+                is_looking_at_screen=None,
                 focus_score=0.72,
                 reason="heuristic matched learning-related active window",
                 distraction_signals=[],
@@ -246,23 +280,11 @@ class LocalMultimodalClient:
                 state="distracted",
                 confidence=0.7,
                 learning_related=False,
-                is_present=has_camera,
-                is_looking_at_screen=True if has_camera else None,
+                is_present=True,
+                is_looking_at_screen=None,
                 focus_score=0.25,
                 reason="heuristic matched distraction-related active window",
                 distraction_signals=["window_content_non_learning"],
-                raw_response={"mode": "heuristic"},
-            )
-        if not has_camera:
-            return StudyAssessment(
-                state="away",
-                confidence=0.6,
-                learning_related=False,
-                is_present=False,
-                is_looking_at_screen=False,
-                focus_score=0.1,
-                reason="camera capture unavailable",
-                distraction_signals=["camera_unavailable"],
                 raw_response={"mode": "heuristic"},
             )
         return StudyAssessment(

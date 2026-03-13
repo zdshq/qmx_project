@@ -1,0 +1,79 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Study Agent: Run",
+            "type": "python",
+            "request": "launch",
+            "module": "study_agent.main",
+            "args": [
+                "run"
+            ],
+            "cwd": "${workspaceFolder}",
+            "envFile": "${workspaceFolder}/.env",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src"
+            },
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Study Agent: Run Once",
+            "type": "python",
+            "request": "launch",
+            "module": "study_agent.main",
+            "args": [
+                "run-once"
+            ],
+            "cwd": "${workspaceFolder}",
+            "envFile": "${workspaceFolder}/.env",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src"
+            },
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Study Agent: Doctor",
+            "type": "python",
+            "request": "launch",
+            "module": "study_agent.main",
+            "args": [
+                "doctor"
+            ],
+            "cwd": "${workspaceFolder}",
+            "envFile": "${workspaceFolder}/.env",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src"
+            },
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Study Agent: Report Today",
+            "type": "python",
+            "request": "launch",
+            "module": "study_agent.main",
+            "args": [
+                "report"
+            ],
+            "cwd": "${workspaceFolder}",
+            "envFile": "${workspaceFolder}/.env",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src"
+            },
+            "console": "integratedTerminal",
+            "justMyCode": false
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Study Agent: Diagnose Then Run Once",
+            "configurations": [
+                "Study Agent: Doctor",
+                "Study Agent: Run Once"
+            ],
+            "stopAll": true
+        }
+    ]
+}

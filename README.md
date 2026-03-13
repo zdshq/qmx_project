@@ -3,26 +3,27 @@
 这是一个面向 PC 端的本地学习监督 Agent 原型，目标是：
 
 - 定时抓取屏幕截图
-- 定时抓取摄像头图像
 - 采集系统上下文，例如前台窗口标题
 - 调用本地多模态模型判断当前学习状态
 - 将观测与判断结果存入 SQLite
 - 每天北京时间 `23:00` 自动生成学习日报
+ - 自动清理过期截图，避免图片无限堆积
 
 ## 适合谁
 
-- 想快速验证“屏幕 + 摄像头 + 本地多模态模型”方案的人
+- 想快速验证“屏幕 + 本地多模态模型”方案的人
 - 想在本地搭一个可调试、可扩展的学习状态 Agent 的人
 - 想基于这个仓库继续加桌面端、规则引擎、提醒系统的人
 
 ## 项目结构
 
 - `src/study_agent/config.py`：配置加载
-- `src/study_agent/capture/`：屏幕截图与摄像头抓拍
+- `src/study_agent/capture/`：屏幕截图
 - `src/study_agent/system/`：系统上下文采集
 - `src/study_agent/model/`：本地多模态模型客户端
 - `src/study_agent/storage/`：SQLite 持久化
 - `src/study_agent/reporting/`：日报生成与调度
+- `src/study_agent/cleanup.py`：过期截图清理
 - `src/study_agent/agent.py`：主 Agent 循环
 - `src/study_agent/main.py`：CLI 入口
 - `tests/`：基础自动化测试
@@ -64,7 +65,7 @@ make doctor
 - Python 版本
 - 关键路径是否可写
 - `xdotool` 是否可用
-- 摄像头是否能打开
+- 截图模式与保留策略是否合理
 - 模型配置是否启用
 - 数据库与截图目录配置
 
@@ -100,11 +101,22 @@ make check         # 运行 lint + test
 3. `make run-once`
 4. 查看 `data/`、`reports/` 与终端输出
 
-如果摄像头打不开、模型不返回 JSON、或者窗口标题为空，优先看：
+如果模型不返回 JSON、窗口标题为空、或者截图清理行为不符合预期，优先看：
 
 - `docs/debugging.md`
 - `docs/architecture.md`
 - `.env.example`
+
+如果你用的是 VS Code，也可以直接使用：
+
+- `.vscode/launch.json:1`
+
+里面已经准备好了这些调试入口：
+
+- `Study Agent: Run`
+- `Study Agent: Run Once`
+- `Study Agent: Doctor`
+- `Study Agent: Report Today`
 
 ## 开发基础设施
 
@@ -127,7 +139,10 @@ make check         # 运行 lint + test
 
 ## 当前限制
 
-- Linux 下活动窗口标题依赖 `xdotool`
-- 键鼠空闲时间目前还是占位实现
-- 摄像头不可用时会降级为启发式判断
+- Ubuntu/Linux 下活动窗口标题依赖 `xdotool`
+- Ubuntu/Linux 下空闲时间检测依赖 `xprintidle`
+- Windows 下会自动使用 Win32 API 获取前台窗口与空闲时间
+- 当前默认是纯屏幕模式，不再抓拍摄像头
+- 估算学习时长基于采样间隔推断，不是逐秒精确计时
+- 当前启用了严格规则：连续 3 张截图几乎无变化时，直接判定为 `away`
 - 这是一个 MVP，更适合验证方案，不是生产级成品

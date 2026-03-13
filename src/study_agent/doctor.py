@@ -7,8 +7,6 @@ import shutil
 import sqlite3
 from dataclasses import dataclass
 
-import cv2
-
 from study_agent.config import Settings
 
 
@@ -30,12 +28,14 @@ class EnvironmentDoctor:
 
     def run(self) -> list[CheckResult]:
         """Run all supported environment checks."""
+        system_name = platform.system()
         return [
             self._check_python(),
             self._check_paths(),
             self._check_database_path(),
-            self._check_xdotool(),
-            self._check_camera(),
+            self._check_active_window_support(system_name),
+            self._check_idle_support(system_name),
+            self._check_capture_settings(),
             self._check_model_settings(),
         ]
 
@@ -81,38 +81,52 @@ class EnvironmentDoctor:
         except sqlite3.Error as error:
             return CheckResult(name="database", ok=False, detail=str(error))
 
-    def _check_xdotool(self) -> CheckResult:
-        """Check whether `xdotool` is available on the system."""
+    def _check_active_window_support(self, system_name: str) -> CheckResult:
+        """Check whether active-window lookup is supported on this platform."""
+        if system_name == "Windows":
+            return CheckResult(
+                name="active_window",
+                ok=True,
+                detail="Win32 foreground window API is available",
+            )
         xdotool_path = shutil.which("xdotool")
         if xdotool_path:
-            return CheckResult(name="xdotool", ok=True, detail=xdotool_path)
+            return CheckResult(name="active_window", ok=True, detail=f"xdotool: {xdotool_path}")
         return CheckResult(
-            name="xdotool", ok=False, detail="not installed; active window title may be unavailable"
+            name="active_window",
+            ok=False,
+            detail="xdotool not installed; active window title may be unavailable",
         )
 
-    def _check_camera(self) -> CheckResult:
-        """Check whether the configured camera can be opened."""
-        previous_log_level = None
-        if hasattr(cv2, "getLogLevel") and hasattr(cv2, "setLogLevel"):
-            previous_log_level = cv2.getLogLevel()
-            cv2.setLogLevel(0)
-        camera = cv2.VideoCapture(self.settings.camera_index)
-        try:
-            if camera.isOpened():
-                return CheckResult(
-                    name="camera",
-                    ok=True,
-                    detail=f"camera index {self.settings.camera_index} is available",
-                )
+    def _check_idle_support(self, system_name: str) -> CheckResult:
+        """Check whether idle-time lookup is supported on this platform."""
+        if system_name == "Windows":
             return CheckResult(
-                name="camera",
-                ok=False,
-                detail=f"camera index {self.settings.camera_index} cannot be opened",
+                name="idle_detection",
+                ok=True,
+                detail="Win32 GetLastInputInfo API is available",
             )
-        finally:
-            camera.release()
-            if previous_log_level is not None:
-                cv2.setLogLevel(previous_log_level)
+        tool_path = shutil.which("xprintidle")
+        if tool_path:
+            return CheckResult(name="idle_detection", ok=True, detail=f"xprintidle: {tool_path}")
+        return CheckResult(
+            name="idle_detection",
+            ok=False,
+            detail="not installed; idle-based away detection will be unavailable",
+        )
+
+    def _check_capture_settings(self) -> CheckResult:
+        """Check whether sampling and retention settings look reasonable."""
+        interval_seconds = self.settings.loop_interval_sec
+        retention_hours = self.settings.capture_retention_hours
+        return CheckResult(
+            name="capture",
+            ok=interval_seconds >= 60 and retention_hours > 0,
+            detail=(
+                f"screen-only mode, interval={interval_seconds}s, retention={retention_hours}h, "
+                f"idle_away={self.settings.idle_away_seconds}s"
+            ),
+        )
 
     def _check_model_settings(self) -> CheckResult:
         """Check whether model-related settings look usable."""

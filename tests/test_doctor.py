@@ -14,6 +14,9 @@ def test_doctor_renders_summary(tmp_path) -> None:
     results = doctor.run()
     text = doctor.render_text(results)
 
-    assert len(results) == 6
+    assert len(results) == 7
     assert "Study Agent Doctor" in text
     assert "Summary:" in text
+    assert "capture" in text
+    assert "active_window" in text
+    assert "idle_detection" in text

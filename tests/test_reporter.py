@@ -20,7 +20,7 @@ def test_reporter_generates_markdown(tmp_path) -> None:
     observation = Observation(
         observed_at=datetime(2026, 3, 12, 20, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
         screen_path=Path("screen.jpg"),
-        camera_path=Path("camera.jpg"),
+        camera_path=None,
         context=SystemContext(active_app="VSCode", window_title="Study - VSCode"),
     )
     assessment = StudyAssessment(
@@ -42,3 +42,4 @@ def test_reporter_generates_markdown(tmp_path) -> None:
     assert report_path.exists()
     assert "VSCode" in report_text
     assert str(observation.observed_at.date()) in report_text
+    assert "估算专注学习时长" in report_text

@@ -8,32 +8,30 @@
 make doctor
 ```
 
+如果你在 VS Code 里调试，可以直接打开：
+
+- `Run and Debug`
+- 选择 `.vscode/launch.json:1` 里的配置
+
+最常用的是：
+
+- `Study Agent: Run`
+- `Study Agent: Run Once`
+- `Study Agent: Doctor`
+
 如果这里有异常，先修环境，不要急着跑主循环。
 
 ## 二、常见问题
 
-### 1. 摄像头打不开
+### 1. 窗口标题拿不到
 
-可能原因：
-
-- 当前机器没有摄像头
-- 摄像头不是 `0` 号设备
-- 摄像头被别的程序占用
-- 当前环境无法访问宿主机摄像头
-
-建议：
-
-- 修改 `.env` 中的 `STUDY_AGENT_CAMERA_INDEX`
-- 先执行 `make doctor`
-- 再执行 `make run-once`
-
-### 2. 窗口标题拿不到
-
-Linux 下依赖 `xdotool`。
+Ubuntu/Linux 下依赖 `xdotool`。
 
 如果没安装，系统会自动降级，但前台应用判断能力会变弱。
 
-### 3. 本地模型调用失败
+Windows 下默认通过 Win32 API 获取，不需要 `xdotool`。
+
+### 2. 本地模型调用失败
 
 优先检查：
 
@@ -42,7 +40,7 @@ Linux 下依赖 `xdotool`。
 - `STUDY_AGENT_MODEL_NAME`
 - 本地模型服务是否真的启动
 
-### 4. 模型返回不是标准 JSON
+### 3. 模型返回不是标准 JSON
 
 项目已经做了几层兼容：
 
@@ -52,13 +50,21 @@ Linux 下依赖 `xdotool`。
 
 如果仍然不稳定，建议固定你的模型 system prompt。
 
-### 5. 日报没有生成
+### 4. 日报没有生成
 
 检查：
 
 - 当前时区是不是 `Asia/Shanghai`
 - 当前时间是否已过 `23:00`
 - 是否有采样数据写入数据库
+
+### 5. 截图没有自动清理
+
+检查：
+
+- `STUDY_AGENT_CAPTURE_RETENTION_HOURS`
+- `data/captures/screen/` 中截图的修改时间
+- 主循环是否仍在正常运行
 
 ## 三、推荐调试顺序
 
@@ -73,6 +79,7 @@ make report
 
 - `.env`
 - 终端打印的 `state`、`focus`、`reason`
+- `idle_seconds`
 - `data/study_agent.db`
 - `reports/`
 - `data/captures/`

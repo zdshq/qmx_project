@@ -20,8 +20,10 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     subparsers.add_parser("init-db", help="Initialize SQLite database")
-    subparsers.add_parser("run", help="Run the agent loop")
-    subparsers.add_parser("run-once", help="Run one observe-assess-persist cycle")
+    run_parser = subparsers.add_parser("run", help="Run the agent loop")
+    run_parser.add_argument("--debug", action="store_true", help="Enable verbose debug logs")
+    run_once_parser = subparsers.add_parser("run-once", help="Run one observe-assess-persist cycle")
+    run_once_parser.add_argument("--debug", action="store_true", help="Enable verbose debug logs")
     subparsers.add_parser("doctor", help="Run environment diagnostics")
 
     # Parser for the `report` subcommand.
@@ -63,11 +65,11 @@ def main() -> None:
         return
 
     if args.command == "run":
-        StudyAgent(settings).run_forever()
+        StudyAgent(settings, debug=args.debug).run_forever()
         return
 
     if args.command == "run-once":
-        StudyAgent(settings).run_once()
+        StudyAgent(settings, debug=args.debug).run_once()
         return
 
     if args.command == "doctor":
