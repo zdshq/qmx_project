@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import base64
 import json
+import re
+from io import BytesIO
 from pathlib import Path
+from urllib.parse import urlparse
+
+from PIL import Image
 from typing import Any
 
 import requests
@@ -26,45 +31,63 @@ class LocalMultimodalClient:
         if not self.settings.model_enabled:
             return self._heuristic_assessment(observation)
 
-        # Request payload sent to the local model.
-        payload = self._build_payload(observation, recent_summary)
-        # HTTP headers for the model request.
+        payload_variants = [
+            self._build_payload(observation, recent_summary, include_images=True, enforce_json_response=True),
+            self._build_payload(observation, recent_summary, include_images=True, enforce_json_response=False),
+            self._build_payload(observation, recent_summary, include_images=False, enforce_json_response=False),
+        ]
+        for payload in payload_variants:
+            try:
+                response = self._post_completion(payload)
+                response.raise_for_status()
+                parsed = self._parse_response(response.json())
+                if parsed is not None:
+                    return parsed
+            except requests.RequestException:
+                continue
+        return self._heuristic_assessment(observation)
+
+    def _build_headers(self) -> dict[str, str]:
+        """Build HTTP headers for the model request."""
         headers = {"Content-Type": "application/json"}
         if self.settings.model_api_key:
             headers["Authorization"] = f"Bearer {self.settings.model_api_key}"
+        return headers
 
-        try:
-            response = requests.post(
-                f"{self.settings.model_base_url.rstrip('/')}/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=60,
-            )
-            response.raise_for_status()
-            parsed = self._parse_response(response.json())
-            if parsed is not None:
-                return parsed
-        except requests.RequestException:
-            pass
-        return self._heuristic_assessment(observation)
+    def _post_completion(self, payload: dict[str, Any]) -> requests.Response:
+        """Post one completion request, bypassing env proxies for local model servers."""
+        url = f"{self.settings.model_base_url.rstrip('/')}/chat/completions"
+        hostname = (urlparse(url).hostname or "").lower()
+        if hostname in {"127.0.0.1", "localhost"}:
+            with requests.Session() as session:
+                session.trust_env = False
+                return session.post(url, headers=self._build_headers(), json=payload, timeout=180)
+        return requests.post(url, headers=self._build_headers(), json=payload, timeout=180)
 
-    def _build_payload(self, observation: Observation, recent_summary: dict[str, Any]) -> dict[str, Any]:
+    def _build_payload(
+        self,
+        observation: Observation,
+        recent_summary: dict[str, Any],
+        *,
+        include_images: bool,
+        enforce_json_response: bool,
+    ) -> dict[str, Any]:
         """Build an OpenAI-compatible multimodal request payload."""
         # User message content containing text and optional images.
         user_content: list[dict[str, Any]] = [
             {"type": "text", "text": self._build_prompt(observation, recent_summary)}
         ]
-        if observation.screen_path:
+        if include_images and observation.screen_path:
             user_content.append({
                 "type": "image_url",
                 "image_url": {"url": self._to_data_url(observation.screen_path)},
             })
-        if observation.camera_path:
+        if include_images and observation.camera_path:
             user_content.append({
                 "type": "image_url",
                 "image_url": {"url": self._to_data_url(observation.camera_path)},
             })
-        return {
+        payload = {
             "model": self.settings.model_name,
             "messages": [
                 {
@@ -77,8 +100,10 @@ class LocalMultimodalClient:
                 },
             ],
             "temperature": 0.1,
-            "response_format": {"type": "json_object"},
         }
+        if enforce_json_response:
+            payload["response_format"] = {"type": "json_object"}
+        return payload
 
     def _build_prompt(self, observation: Observation, recent_summary: dict[str, Any]) -> str:
         """Build the structured prompt used for study-state inference."""
@@ -100,7 +125,9 @@ class LocalMultimodalClient:
             # Standard Chat Completions text content location.
             content = response_json["choices"][0]["message"]["content"]
             # Parsed structured JSON produced by the model.
-            parsed = json.loads(content)
+            parsed = self._extract_json_object(content)
+            if parsed is None:
+                return None
             return StudyAssessment(
                 state=str(parsed.get("state", "uncertain")),
                 confidence=float(parsed.get("confidence", 0.5)),
@@ -114,6 +141,45 @@ class LocalMultimodalClient:
             )
         except (KeyError, ValueError, TypeError, json.JSONDecodeError):
             return None
+
+    def _extract_json_object(self, content: Any) -> dict[str, Any] | None:
+        """Extract the first valid JSON object from a model response."""
+        if isinstance(content, list):
+            text = "\n".join(
+                str(item.get("text", ""))
+                for item in content
+                if isinstance(item, dict)
+            )
+        else:
+            text = str(content)
+
+        candidates = [text.strip()]
+        candidates.append(re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip())
+
+        fenced_matches = re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.DOTALL)
+        candidates.extend(match.strip() for match in fenced_matches)
+
+        decoder = json.JSONDecoder()
+        for candidate in candidates:
+            if not candidate:
+                continue
+            try:
+                parsed = json.loads(candidate)
+                if isinstance(parsed, dict):
+                    return parsed
+            except json.JSONDecodeError:
+                pass
+
+            for start_index, char in enumerate(candidate):
+                if char != "{":
+                    continue
+                try:
+                    parsed, _ = decoder.raw_decode(candidate[start_index:])
+                    if isinstance(parsed, dict):
+                        return parsed
+                except json.JSONDecodeError:
+                    continue
+        return None
 
     def _heuristic_assessment(self, observation: Observation) -> StudyAssessment:
         """Run heuristic fallback logic when the model is unavailable."""
@@ -188,9 +254,12 @@ class LocalMultimodalClient:
         )
 
     def _to_data_url(self, path: Path) -> str:
-        """Encode an image file as a data URL."""
-        # MIME type for the encoded image.
+        """Encode an image file as a compressed data URL for local vision models."""
         mime_type = "image/jpeg"
-        # Base64-encoded file contents.
-        encoded = base64.b64encode(path.read_bytes()).decode("utf-8")
+        with Image.open(path) as image:
+            optimized = image.convert("RGB")
+            optimized.thumbnail((768, 768))
+            buffer = BytesIO()
+            optimized.save(buffer, format="JPEG", quality=60, optimize=True)
+        encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
         return f"data:{mime_type};base64,{encoded}"
