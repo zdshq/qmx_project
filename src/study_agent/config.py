@@ -49,14 +49,12 @@ class Settings:
         return ZoneInfo(self.timezone)
 
 
-
 def _get_bool(name: str, default: bool) -> bool:
     """Read a boolean value from an environment variable."""
     raw_value = os.getenv(name)
     if raw_value is None:
         return default
     return raw_value.lower() in {"1", "true", "yes", "on"}
-
 
 
 def load_settings() -> Settings:

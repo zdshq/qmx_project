@@ -7,9 +7,9 @@ from datetime import datetime
 
 from study_agent.agent import StudyAgent
 from study_agent.config import load_settings
+from study_agent.doctor import EnvironmentDoctor
 from study_agent.reporting.reporter import DailyReporter
 from study_agent.storage.db import Database
-
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -22,12 +22,12 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("init-db", help="Initialize SQLite database")
     subparsers.add_parser("run", help="Run the agent loop")
     subparsers.add_parser("run-once", help="Run one observe-assess-persist cycle")
+    subparsers.add_parser("doctor", help="Run environment diagnostics")
 
     # Parser for the `report` subcommand.
     report_parser = subparsers.add_parser("report", help="Generate report for a specific day")
     report_parser.add_argument("--date", dest="target_date", help="Target date in YYYY-MM-DD")
     return parser
-
 
 
 def main() -> None:
@@ -68,6 +68,11 @@ def main() -> None:
 
     if args.command == "run-once":
         StudyAgent(settings).run_once()
+        return
+
+    if args.command == "doctor":
+        doctor = EnvironmentDoctor(settings)
+        print(doctor.render_text(doctor.run()))
         return
 
     parser.error("Unknown command")

@@ -49,7 +49,9 @@ class SystemContextCollector:
             # Active window identifier.
             window_id = subprocess.check_output(["xdotool", "getactivewindow"], text=True).strip()
             # Active window title string.
-            title = subprocess.check_output(["xdotool", "getwindowname", window_id], text=True).strip()
+            title = subprocess.check_output(
+                ["xdotool", "getwindowname", window_id], text=True
+            ).strip()
             return title or None
         except (subprocess.SubprocessError, FileNotFoundError):
             return None

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
-from typing import Iterator
 
 from study_agent.types import Observation, StudyAssessment
 
@@ -83,7 +83,9 @@ class Database:
                     assessment.confidence,
                     int(assessment.learning_related),
                     int(assessment.is_present),
-                    None if assessment.is_looking_at_screen is None else int(assessment.is_looking_at_screen),
+                    None
+                    if assessment.is_looking_at_screen is None
+                    else int(assessment.is_looking_at_screen),
                     assessment.focus_score,
                     assessment.reason,
                     json.dumps(assessment.distraction_signals, ensure_ascii=False),
@@ -95,7 +97,10 @@ class Database:
         """Summarize recent records for use as short-term model memory."""
         with self.connect() as connection:
             rows = connection.execute(
-                "SELECT state, focus_score, learning_related, is_present FROM observations ORDER BY id DESC LIMIT ?",
+                (
+                    "SELECT state, focus_score, learning_related, is_present "
+                    "FROM observations ORDER BY id DESC LIMIT ?"
+                ),
                 (limit,),
             ).fetchall()
         if not rows:
@@ -168,9 +173,13 @@ class Database:
             "date": str(target_day),
             "timezone": timezone_name,
             "sample_count": sample_count,
-            "study_ratio": round(sum(row["learning_related"] for row in rows) / sample_count_float, 3),
+            "study_ratio": round(
+                sum(row["learning_related"] for row in rows) / sample_count_float, 3
+            ),
             "presence_ratio": round(sum(row["is_present"] for row in rows) / sample_count_float, 3),
-            "avg_focus_score": round(sum(row["focus_score"] for row in rows) / sample_count_float, 3),
+            "avg_focus_score": round(
+                sum(row["focus_score"] for row in rows) / sample_count_float, 3
+            ),
             "top_apps": sorted(app_counts.items(), key=lambda item: item[1], reverse=True)[:5],
             "state_breakdown": state_breakdown,
             "highlights": highlights,

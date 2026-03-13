@@ -7,12 +7,11 @@ import json
 import re
 from io import BytesIO
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
-from PIL import Image
-from typing import Any
-
 import requests
+from PIL import Image
 
 from study_agent.config import Settings
 from study_agent.types import Observation, StudyAssessment
@@ -32,9 +31,15 @@ class LocalMultimodalClient:
             return self._heuristic_assessment(observation)
 
         payload_variants = [
-            self._build_payload(observation, recent_summary, include_images=True, enforce_json_response=True),
-            self._build_payload(observation, recent_summary, include_images=True, enforce_json_response=False),
-            self._build_payload(observation, recent_summary, include_images=False, enforce_json_response=False),
+            self._build_payload(
+                observation, recent_summary, include_images=True, enforce_json_response=True
+            ),
+            self._build_payload(
+                observation, recent_summary, include_images=True, enforce_json_response=False
+            ),
+            self._build_payload(
+                observation, recent_summary, include_images=False, enforce_json_response=False
+            ),
         ]
         for payload in payload_variants:
             try:
@@ -78,15 +83,19 @@ class LocalMultimodalClient:
             {"type": "text", "text": self._build_prompt(observation, recent_summary)}
         ]
         if include_images and observation.screen_path:
-            user_content.append({
-                "type": "image_url",
-                "image_url": {"url": self._to_data_url(observation.screen_path)},
-            })
+            user_content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": self._to_data_url(observation.screen_path)},
+                }
+            )
         if include_images and observation.camera_path:
-            user_content.append({
-                "type": "image_url",
-                "image_url": {"url": self._to_data_url(observation.camera_path)},
-            })
+            user_content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": self._to_data_url(observation.camera_path)},
+                }
+            )
         payload = {
             "model": self.settings.model_name,
             "messages": [
@@ -109,14 +118,23 @@ class LocalMultimodalClient:
         """Build the structured prompt used for study-state inference."""
         # System context attached to the current observation.
         context = observation.context
-        return (
-            "请根据屏幕截图、摄像头截图和上下文判断用户当前学习状态。\n"
-            "输出 JSON 字段: "
-            "state, confidence, learning_related, is_present, is_looking_at_screen, focus_score, reason, distraction_signals。\n"
-            f"当前上下文: active_app={context.active_app}, window_title={context.window_title}, "
-            f"idle_seconds={context.idle_seconds}, app_switch_count_5m={context.app_switch_count_5m}\n"
-            f"最近摘要: {json.dumps(recent_summary, ensure_ascii=False)}\n"
-            "state 只允许: studying, distracted, away, uncertain。"
+        return "".join(
+            [
+                "请根据屏幕截图、摄像头截图和上下文判断用户当前学习状态。\n",
+                "输出 JSON 字段: ",
+                (
+                    "state, confidence, learning_related, is_present, "
+                    "is_looking_at_screen, focus_score, reason, distraction_signals。\n"
+                ),
+                (
+                    f"当前上下文: active_app={context.active_app}, "
+                    f"window_title={context.window_title}, "
+                    f"idle_seconds={context.idle_seconds}, "
+                    f"app_switch_count_5m={context.app_switch_count_5m}\n"
+                ),
+                f"最近摘要: {json.dumps(recent_summary, ensure_ascii=False)}\n",
+                "state 只允许: studying, distracted, away, uncertain。",
+            ]
         )
 
     def _parse_response(self, response_json: dict[str, Any]) -> StudyAssessment | None:
@@ -146,9 +164,7 @@ class LocalMultimodalClient:
         """Extract the first valid JSON object from a model response."""
         if isinstance(content, list):
             text = "\n".join(
-                str(item.get("text", ""))
-                for item in content
-                if isinstance(item, dict)
+                str(item.get("text", "")) for item in content if isinstance(item, dict)
             )
         else:
             text = str(content)
@@ -201,7 +217,15 @@ class LocalMultimodalClient:
             "github",
         ]
         # Keywords that suggest distracting activity.
-        distracted_keywords = ["bilibili", "youtube", "douyin", "wechat", "discord", "game", "steam"]
+        distracted_keywords = [
+            "bilibili",
+            "youtube",
+            "douyin",
+            "wechat",
+            "discord",
+            "game",
+            "steam",
+        ]
         # Whether a camera image was captured successfully.
         has_camera = observation.camera_path is not None
 

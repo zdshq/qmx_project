@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "study-agent"
 version = "0.1.0"
 description = "Local PC study monitoring agent MVP"
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "mss==10.1.0",
@@ -16,6 +17,14 @@ dependencies = [
   "pydantic==2.11.1",
 ]
 
+[project.optional-dependencies]
+dev = [
+  "pytest==8.3.5",
+  "pytest-cov==6.0.0",
+  "ruff==0.11.0",
+  "pre-commit==4.2.0",
+]
+
 [project.scripts]
 study-agent = "study_agent.main:main"
 
@@ -24,3 +33,22 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["B008"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
